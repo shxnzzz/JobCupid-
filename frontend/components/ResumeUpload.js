@@ -310,7 +310,7 @@ export default function ResumeUpload() {
     );
 }
 */
-
+/*
 import { useState } from "react";
 import axios from "axios";
 
@@ -334,15 +334,22 @@ export default function ResumeUpload() {
             return;
         }
 
+
+
         setLoading(true);
         setError(null);
         const formData = new FormData();
         formData.append("resume", file);
 
         try {
-            const response = await axios.post("http://localhost:5000/upload", formData);
+            const response = await axios.post("http://localhost:5000/upload/", formData);
             console.log("Upload response:", response.data);
             setResumeData(response.data);
+            if (!response.data.skills || response.data.skills.length === 0) {
+                console.warn("No skills detected in resume.");
+                return;
+            }
+            
             if (response.data.skills.length > 0) {
                 fetchJobs(response.data.skills);
             } else {
@@ -422,6 +429,140 @@ export default function ResumeUpload() {
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+        </div>
+    );
+}
+*/
+
+import { useState } from "react";
+import axios from "axios";
+
+export default function ResumeUpload() {
+    const [file, setFile] = useState(null);
+    const [resumeData, setResumeData] = useState(null);
+    const [jobMatches, setJobMatches] = useState([]);
+    const [coverLetter, setCoverLetter] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    const handleFileChange = (event) => {
+        setFile(event.target.files[0]);
+        setResumeData(null);
+        setJobMatches([]);
+        setCoverLetter("");
+        setError(null);
+    };
+
+    const handleUpload = async () => {
+        if (!file) {
+            setError("Please select a resume file to upload.");
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        const formData = new FormData();
+        formData.append("resume", file);
+
+        try {
+            const response = await axios.post("http://localhost:5000/upload", formData);
+            console.log("Upload response:", response.data);
+            setResumeData(response.data);
+            if (!response.data.skills || response.data.skills.length === 0) {
+                console.warn("No skills detected in resume.");
+                return;
+            }
+            fetchJobs(response.data.skills);
+        } catch (err) {
+            console.error("Upload failed:", err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchJobs = async (skills) => {
+        try {
+            console.log("Fetching jobs for:", skills);
+            const response = await axios.post("http://localhost:5000/fetch-jobs", { skills });
+            console.log("Job API response:", response.data);
+            setJobMatches(response.data.jobs || []);
+        } catch (error) {
+            console.error("Error fetching jobs:", error);
+            setJobMatches([]);
+        }
+    };
+
+    const generateCoverLetter = async (job) => {
+        if (!resumeData) return;
+        setLoading(true);
+        try {
+            const response = await axios.post("http://localhost:5000/generate-cover-letter", {
+                jobTitle: job.title,
+                company: job.company,
+                skills: resumeData.skills
+            });
+            setCoverLetter(response.data.coverLetter);
+        } catch (error) {
+            console.error("Cover letter generation failed:", error);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div style={{ textAlign: "center", padding: "20px", color: "white" }}>
+            <h2>Upload Your Resume</h2>
+            <input type="file" accept=".pdf,.doc,.docx" onChange={handleFileChange} />
+            <br />
+            <button onClick={handleUpload} disabled={loading} style={{ marginTop: "10px", padding: "8px 15px", cursor: "pointer" }}>
+                {loading ? "Uploading..." : "Upload Resume"}
+            </button>
+            {error && <p style={{ color: "red", marginTop: "10px" }}>{error}</p>}
+
+            {resumeData && (
+                <div style={{ marginTop: "20px", textAlign: "left", display: "inline-block", maxWidth: "600px" }}>
+                    <h3><strong>Extracted Information:</strong></h3>
+                    <p><strong>Name:</strong> {resumeData.name || "Not found"}</p>
+                    <p><strong>Email:</strong> {resumeData.email || "Not found"}</p>
+                    <p><strong>Phone:</strong> {resumeData.phone || "Not found"}</p>
+                    <p><strong>Skills:</strong> {resumeData.skills.length > 0 ? resumeData.skills.join(", ") : "No skills detected"}</p>
+                    
+                    {jobMatches.length > 0 && (
+                        <div>
+                            <h3><strong>Recommended Jobs (Sorted by Relevance)</strong></h3>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                                {jobMatches.map((job, index) => (
+                                    <div key={index} style={{
+                                        border: "1px solid #ccc", 
+                                        padding: "10px", 
+                                        borderRadius: "5px", 
+                                        background: "#333",
+                                        color: "white",
+                                        width: "100%"
+                                    }}>
+                                        <a href={job.url} target="_blank" rel="noopener noreferrer" style={{ color: "#1E90FF" }}>
+                                            <h4 style={{ margin: 0 }}>{job.title}</h4>
+                                        </a>
+                                        <p style={{ margin: "5px 0" }}>
+                                            <strong>Company:</strong> {job.company || "Unknown"} <br />
+                                            <strong>Location:</strong> {job.location || "Not specified"}
+                                        </p>
+                                        <button onClick={() => generateCoverLetter(job)} style={{ padding: "5px 10px", cursor: "pointer" }}>Generate Cover Letter</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {coverLetter && (
+                <div style={{ marginTop: "20px", padding: "15px", border: "1px solid #444", backgroundColor: "#eee", borderRadius: "5px" }}>
+                    <h3>Generated Cover Letter</h3>
+                    <pre>{coverLetter}</pre>
+                    <button onClick={() => setCoverLetter("")}>Close</button>
                 </div>
             )}
         </div>
