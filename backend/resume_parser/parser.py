@@ -24,7 +24,7 @@ def extract_email(text):
 
 # Extract Phone Number
 def extract_phone(text):
-    match = re.search(r"\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", text)
+    match = re.search(r"\b[689]\d{3}[-.\s]?\d{4}\b", text)
     return match.group(0) if match else "Not found"
 
 # Extract Name
