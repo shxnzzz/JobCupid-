@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
 export default function ResumeUpload() {
@@ -10,6 +10,9 @@ export default function ResumeUpload() {
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [fetchingJobs, setFetchingJobs] = useState(false);
+
+    const jobListRef = useRef(null); // Reference to the job list section
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
@@ -76,8 +79,6 @@ export default function ResumeUpload() {
         }
     };
 
-    const [fetchingJobs, setFetchingJobs] = useState(false);
-
     const fetchJobs = async (skills) => {
         setFetchingJobs(true);
         try {
@@ -106,6 +107,13 @@ export default function ResumeUpload() {
         setLoading(false);
     };
 
+    // UseEffect to handle scrolling after job matches are fetched
+    useEffect(() => {
+        if (jobMatches.length > 0 && jobListRef.current) {
+            jobListRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [jobMatches]); // Scroll when jobMatches change
+
     return (
         <div className="container">
             <div className="upload-box">
@@ -123,12 +131,13 @@ export default function ResumeUpload() {
                         className="file-input"
                         id="fileUpload"
                         onChange={handleFileChange}
+                        style={{ display: "none" }}
                     />
                     <label htmlFor="fileUpload" role="button" tabIndex={0}>
                         {file ? (
                             <p className="success-message">✔ {file.name}</p>
                         ) : (
-                            <p>Drag & Drop your resume here or <span className="text-blue-400 underline">Browse Files</span></p>
+                            <p>Drag & Drop your resume here or <span className="text-blue-400 underline">Click to Browse Files</span></p>
                         )}
                     </label>
                 </div>
@@ -162,7 +171,7 @@ export default function ResumeUpload() {
                 )}
 
                 {jobMatches.length > 0 && (
-                    <div className="job-matches">
+                    <div className="job-matches" ref={jobListRef}>
                         <h3>Recommended Jobs</h3>
                         <div className="job-list">
                             {jobMatches.map((job, index) => (
@@ -173,20 +182,19 @@ export default function ResumeUpload() {
                                     <p><strong>Company:</strong> {job.company || "Unknown"}</p>
                                     <p><strong>Location:</strong> {job.location || "Not specified"}</p>
                                     <button className="generate-cover-button"
-                                    onClick={() => generateCoverLetter(job)} 
-                                    disabled={loading}> {loading ? "Generating..." : "Generate Cover Letter"}
+                                        onClick={() => generateCoverLetter(job)} 
+                                        disabled={loading}> {loading ? "Generating..." : "Generate Cover Letter"}
                                     </button>
-                                    {index < jobMatches.length - 1 && <hr />} 
                                 </div>
                             ))}
                         </div>
                     </div>
                 )}
-                {/* Cover Letter Section */}
+
                 {coverLetter && (
-                    <div className="cover-letter">
+                    <div className="cover-letter-container">
                         <h3>Generated Cover Letter</h3>
-                        <pre>{coverLetter}</pre>
+                        <pre className="cover-letter-content">{coverLetter}</pre>
                         <button onClick={() => setCoverLetter("")}>Close</button>
                     </div>
                 )}
