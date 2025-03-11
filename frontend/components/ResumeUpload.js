@@ -90,15 +90,19 @@ export default function ResumeUpload() {
             setFetchingJobs(false);
         }
     };
-
     const generateCoverLetter = async (job) => {
         if (!resumeData) return;
         setLoading(true);
         try {
             const response = await axios.post("http://localhost:5000/generate-cover-letter", {
+                name: resumeData.name || "Not Provided",
+                address: resumeData.address || "Not Provided",
+                cityStateZip: resumeData.cityStateZip || "Not Provided",
+                email: resumeData.email || "Not Provided",
+                phone: resumeData.phone || "Not Provided",
                 jobTitle: job.title,
                 company: job.company,
-                skills: resumeData.skills
+                skills: resumeData.skills || []
             });
             setCoverLetter(response.data.coverLetter);
         } catch (error) {
@@ -106,7 +110,8 @@ export default function ResumeUpload() {
         }
         setLoading(false);
     };
-
+    
+    
     // UseEffect to handle scrolling after job matches are fetched
     useEffect(() => {
         if (jobMatches.length > 0 && jobListRef.current) {

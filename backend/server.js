@@ -138,10 +138,19 @@ app.post("/fetch-jobs", async (req, res) => {
 
 // Generate cover letter using GPT
 app.post("/generate-cover-letter", async (req, res) => {
-    const { jobTitle, company, skills } = req.body;
-    if (!jobTitle || !company || !skills || skills.length === 0) {
-        return res.status(400).json({ error: "Missing job details or skills" });
+    const { name, address, cityStateZip, email, phone, jobTitle, company, skills } = req.body;
+    
+    if (!name || !address || !cityStateZip || !email || !phone || !jobTitle || !company || !skills || skills.length === 0) {
+        return res.status(400).json({ error: "Missing required user details or job information" });
     }
+
+    const userInfo = `
+${name}
+${address}
+${cityStateZip}
+${email}
+${phone}
+[Date]`;
 
     try {
         const response = await axios.post(
@@ -150,7 +159,16 @@ app.post("/generate-cover-letter", async (req, res) => {
                 model: "gpt-4o",
                 messages: [
                     { role: "system", content: "You are an AI that generates professional cover letters." },
-                    { role: "user", content: `Generate a personalized cover letter for a ${jobTitle} position at ${company}. The candidate has the following skills: ${skills.join(", ")}.` }
+                    { 
+                        role: "user", 
+                        content: `Generate a personalized cover letter for a ${jobTitle} position at ${company}. The candidate has the following skills: ${skills.join(", ")}. 
+                        
+The cover letter should include the following user details:
+${userInfo}
+
+Ensure that all placeholders like [Your Name], [Your Address], etc., are properly replaced with the user's details.
+`
+                    }
                 ],
                 temperature: 0.7
             },
@@ -159,10 +177,11 @@ app.post("/generate-cover-letter", async (req, res) => {
 
         res.json({ coverLetter: response.data.choices[0].message.content });
     } catch (error) {
-        console.error(" Error generating cover letter:", error.message);
+        console.error("Error generating cover letter:", error.message);
         res.status(500).json({ error: "Failed to generate cover letter" });
     }
 });
+
 
 // Start the server
 app.listen(PORT, () => {
