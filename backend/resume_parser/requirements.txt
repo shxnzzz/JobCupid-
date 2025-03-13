@@ -2,4 +2,4 @@ spacy
 pdfplumber
 nltk
 regex
-openai
+openai  
