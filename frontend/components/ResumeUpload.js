@@ -1,16 +1,20 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
+
 export default function ResumeUpload() {
     const [file, setFile] = useState(null);
     const [resumeData, setResumeData] = useState(null);
     const [jobMatches, setJobMatches] = useState([]);
     const [coverLetter, setCoverLetter] = useState("");
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [isDragging, setIsDragging] = useState(false);
     const [fetchingJobs, setFetchingJobs] = useState(false);
+    const [generatingForJob, setGeneratingForJob] = useState(null);
 
     const jobListRef = useRef(null); // Reference to the job list section
 
@@ -68,7 +72,7 @@ export default function ResumeUpload() {
         formData.append("resume", file);
 
         try {
-            const response = await axios.post("http://localhost:5000/upload", formData);
+            const response = await axios.post(`${API_BASE_URL}/upload`, formData);
             setResumeData(response.data);
             setSuccess("Resume uploaded successfully!");
             fetchJobs(response.data.skills);
@@ -82,7 +86,7 @@ export default function ResumeUpload() {
     const fetchJobs = async (skills) => {
         setFetchingJobs(true);
         try {
-            const response = await axios.post("http://localhost:5000/fetch-jobs", { skills });
+            const response = await axios.post(`${API_BASE_URL}/fetch-jobs`, { skills });
             setJobMatches(response.data.jobs || []);
         } catch (error) {
             setJobMatches([]);
@@ -92,9 +96,9 @@ export default function ResumeUpload() {
     };
     const generateCoverLetter = async (job) => {
         if (!resumeData) return;
-        setLoading(true);
+        setGeneratingForJob(job.title);
         try {
-            const response = await axios.post("http://localhost:5000/generate-cover-letter", {
+            const response = await axios.post(`${API_BASE_URL}/generate-cover-letter`, {
                 name: resumeData.name || "Not Provided",
                 address: resumeData.address || "Not Provided",
                 cityStateZip: resumeData.cityStateZip || "Not Provided",
@@ -105,10 +109,34 @@ export default function ResumeUpload() {
                 skills: resumeData.skills || []
             });
             setCoverLetter(response.data.coverLetter);
+            setIsModalOpen(true);
         } catch (error) {
             console.error("Cover letter generation failed:", error);
         }
-        setLoading(false);
+        setGeneratingForJob(null);
+    };
+
+    const copyCoverLetter = async () => {
+        try {
+            await navigator.clipboard.writeText(coverLetter || "");
+            setSuccess("Copied to clipboard");
+            setTimeout(() => setSuccess(null), 1500);
+        } catch (e) {
+            setError("Copy failed");
+            setTimeout(() => setError(null), 1500);
+        }
+    };
+
+    const downloadCoverLetter = () => {
+        const blob = new Blob([coverLetter || ""], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `cover-letter-${Date.now()}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
     };
     
     
@@ -188,7 +216,7 @@ export default function ResumeUpload() {
                                     <p><strong>Location:</strong> {job.location || "Not specified"}</p>
                                     <button className="generate-cover-button"
                                         onClick={() => generateCoverLetter(job)} 
-                                        disabled={loading}> {loading ? "Generating..." : "Generate Cover Letter"}
+                                        disabled={generatingForJob === job.title}> {generatingForJob === job.title ? "Generating..." : "Generate Cover Letter"}
                                     </button>
                                 </div>
                             ))}
@@ -196,11 +224,23 @@ export default function ResumeUpload() {
                     </div>
                 )}
 
-                {coverLetter && (
-                    <div className="cover-letter-container">
-                        <h3>Generated Cover Letter</h3>
-                        <pre className="cover-letter-content">{coverLetter}</pre>
-                        <button onClick={() => setCoverLetter("")}>Close</button>
+                {/* Modal for Cover Letter */}
+                {isModalOpen && (
+                    <div className="modal-backdrop" role="dialog" aria-modal="true">
+                        <div className="modal">
+                            <div className="modal-header">
+                                <h3>Generated Cover Letter</h3>
+                                <button className="modal-close" onClick={() => { setIsModalOpen(false); }}>✕</button>
+                            </div>
+                            <div className="modal-body">
+                                <pre className="cover-letter-content">{coverLetter}</pre>
+                            </div>
+                            <div className="modal-footer modal-actions">
+                                <button className="btn-secondary" onClick={copyCoverLetter}>Copy</button>
+                                <button className="btn-secondary" onClick={downloadCoverLetter}>Download .txt</button>
+                                <button className="upload-button" onClick={() => setIsModalOpen(false)}>Close</button>
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>

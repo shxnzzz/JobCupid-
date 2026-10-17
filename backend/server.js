@@ -16,11 +16,11 @@ app.use(cors());
 app.use(express.json());
 
 // Adzuna API Credentials
-const ADZUNA_API_ID = "c385b22d";
-const ADZUNA_API_KEY = "6908744e9eedb358c34034d7fdf4ad20";
+const ADZUNA_API_ID = process.env.ADZUNA_API_ID;
+const ADZUNA_API_KEY = process.env.ADZUNA_API_KEY;
 
 // OpenAI API Key
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;  // Instead of hardcoding
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;  // Loaded from .env
 
 // Ensure uploads directory exists
 const uploadDir = path.join(__dirname, "uploads");
@@ -28,8 +28,18 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Multer storage configuration
-const upload = multer({ dest: uploadDir });
+// Multer storage configuration with file limits and type filter
+const upload = multer({
+    dest: uploadDir,
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+    fileFilter: (req, file, cb) => {
+        const allowed = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
+        if (allowed.includes(file.mimetype)) {
+            return cb(null, true);
+        }
+        cb(new Error("Unsupported file type. Only PDF/DOC/DOCX allowed."));
+    }
+});
 
 // Upload and parse resume
 app.post("/upload", upload.single("resume"), (req, res) => {
@@ -48,12 +58,18 @@ app.post("/upload", upload.single("resume"), (req, res) => {
     const pythonScript = path.join(__dirname, "resume_parser", "parser.py");
 
     exec(`python "${pythonScript}" "${filePath}"`, (error, stdout, stderr) => {
+        // Ensure temporary file is removed regardless of outcome
+        const cleanup = () => {
+            fs.unlink(filePath, () => {});
+        };
         if (error) {
             console.error("Execution Error:", error.message);
+            cleanup();
             return res.status(500).json({ error: "Error executing Python script." });
         }
         if (stderr) {
             console.error("Python Script Error:", stderr);
+            cleanup();
             return res.status(500).json({ error: "Python script returned an error." });
         }
 
@@ -61,14 +77,17 @@ app.post("/upload", upload.single("resume"), (req, res) => {
 
         if (!stdout.trim()) {
             console.error("Python script returned empty response.");
+            cleanup();
             return res.status(500).json({ error: "No data extracted from resume." });
         }
 
         try {
             const parsedData = JSON.parse(stdout);
+            cleanup();
             return res.json(parsedData);
         } catch (parseError) {
             console.error("JSON Parsing Error:", parseError, stdout);
+            cleanup();
             return res.status(500).json({ error: "Invalid response from parser." });
         }
     });

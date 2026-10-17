@@ -15,3 +15,12 @@ To run , enter in cmd / vsc terminal
 - npm run dev ( this will generate the locahost URL)
 - enter the local host url in the browser 
 
+Create a `.env` file under the `backend` folder with these variables:
+
+OPENAI_API_KEY= your_openai_key_here
+ADZUNA_API_ID= your_adzuna_app_id
+ADZUNA_API_KEY= your_adzuna_app_key
+
+And a `.env.local` under `Frontend` (Next.js) if you want to override API base URL:
+
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
