@@ -1,11 +1,14 @@
+require("dotenv").config();
+
 const express = require("express");
 const multer = require("multer");
 const { execFile } = require("child_process");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
-require("dotenv").config();
+const { rateLimit } = require("express-rate-limit");
+const { extractProfile, writeCoverLetter, AiUnavailableError } = require("./lib/openai");
+const { findMatchingJobs, isAdzunaConfigured } = require("./lib/jobs");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,13 +16,14 @@ const PYTHON_PATH = process.env.PYTHON_PATH || "python";
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 const PARSER_TIMEOUT_MS = 60 * 1000;
 
-const ADZUNA_API_ID = process.env.ADZUNA_API_ID;
-const ADZUNA_API_KEY = process.env.ADZUNA_API_KEY;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
 const missingEnv = ["ADZUNA_API_ID", "ADZUNA_API_KEY", "OPENAI_API_KEY"].filter((key) => !process.env[key]);
 if (missingEnv.length > 0) {
     console.warn(`Missing environment variables: ${missingEnv.join(", ")}. See .env.example.`);
+}
+
+// Needed behind a hosting proxy (Render, Railway, etc.) so rate limits see the real client IP
+if (process.env.TRUST_PROXY) {
+    app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
 }
 
 // CORS: only allow the configured frontend origin(s)
@@ -38,6 +42,20 @@ app.use(cors({
     },
 }));
 app.use(express.json({ limit: "100kb" }));
+
+// Every AI-backed request costs money, so cap requests per IP
+function limiter(limit, windowMinutes, message) {
+    return rateLimit({
+        windowMs: windowMinutes * 60 * 1000,
+        limit,
+        standardHeaders: "draft-8",
+        legacyHeaders: false,
+        handler: (req, res) => res.status(429).json({ error: message }),
+    });
+}
+const uploadLimiter = limiter(10, 60, "You've uploaded a lot of resumes in the last hour. Please try again later.");
+const jobsLimiter = limiter(40, 60, "Too many searches in the last hour. Please try again later.");
+const coverLetterLimiter = limiter(20, 60, "You've written a lot of cover letters in the last hour. Please try again later.");
 
 // Uploaded resumes are temporary; clear anything left over from a previous crash
 const uploadDir = path.join(__dirname, "uploads");
@@ -86,7 +104,7 @@ function runParser(filePath) {
         execFile(
             PYTHON_PATH,
             [pythonScript, filePath],
-            { timeout: PARSER_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true },
+            { timeout: PARSER_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
             (error, stdout, stderr) => {
                 // Python libraries often log warnings to stderr, so only the exit code decides success
                 if (stderr) console.warn("Parser stderr:", stderr.trim());
@@ -102,8 +120,16 @@ function runParser(filePath) {
     });
 }
 
-// Upload and parse resume
-app.post("/upload", (req, res) => {
+function describeAiError(err) {
+    if (err instanceof AiUnavailableError) return err.message;
+    if (err.response) return `OpenAI ${err.response.status}: ${JSON.stringify(err.response.data).slice(0, 300)}`;
+    return err.message;
+}
+
+const AI_UNAVAILABLE_MESSAGE = "Our AI service is unavailable right now, so we can't analyse your resume. Please try again in a few minutes.";
+
+// Upload a resume, extract its text, and have the AI build a profile from it
+app.post("/upload", uploadLimiter, (req, res) => {
     upload.single("resume")(req, res, async (uploadError) => {
         if (uploadError) {
             if (req.file) deleteFile(req.file.path);
@@ -122,6 +148,7 @@ app.post("/upload", (req, res) => {
         }
 
         const filePath = req.file.path;
+        let resumeText;
         try {
             if (req.file.size === 0) {
                 return res.status(400).json({ error: "This file is empty." });
@@ -145,133 +172,82 @@ app.post("/upload", (req, res) => {
                 return res.status(500).json({ error: "We couldn't read your resume. Please try again." });
             }
 
-            if (!result.output) {
+            if (!result.output || typeof result.output.text !== "string") {
                 console.error("Parser returned no usable output.");
                 return res.status(500).json({ error: "We couldn't read your resume. Please try again." });
             }
-
-            return res.json(result.output);
+            resumeText = result.output.text;
         } catch (err) {
             console.error("Unexpected upload error:", err.message);
             return res.status(500).json({ error: "Something went wrong. Please try again." });
         } finally {
             deleteFile(filePath);
         }
+
+        try {
+            const profile = await extractProfile(resumeText);
+            return res.json(profile);
+        } catch (err) {
+            console.error("Profile extraction failed:", describeAiError(err));
+            return res.status(503).json({ error: AI_UNAVAILABLE_MESSAGE });
+        }
     });
 });
 
-// Fetch jobs from Adzuna API
-async function fetchJobsForSkill(skill) {
-    try {
-        console.log(`Fetching jobs for skill: "${skill}"`);
-
-        const response = await axios.get(
-            `https://api.adzuna.com/v1/api/jobs/sg/search/1`,
-            {
-                params: {
-                    app_id: ADZUNA_API_ID,
-                    app_key: ADZUNA_API_KEY,
-                    what: skill,
-                    results_per_page: 5,
-                },
-                timeout: 10000,
-            }
-        );
-
-        if (!response.data || !response.data.results) {
-            console.warn(`No results found for skill: "${skill}"`);
-            return [];
-        }
-
-        return response.data.results.map((job) => ({
-            title: job.title,
-            company: job.company ? job.company.display_name : "Unknown",
-            location: job.location ? job.location.display_name : "Remote",
-            url: job.redirect_url,
-            foundBy: skill,
-        }));
-    } catch (error) {
-        console.error(`API Error for skill "${skill}":`, error.message);
-        return [];
-    }
+function cleanStringArray(value, maxItems, maxLength = 60) {
+    if (!Array.isArray(value)) return [];
+    return value
+        .filter((item) => typeof item === "string")
+        .map((item) => item.replace(/\s+/g, " ").trim().slice(0, maxLength))
+        .filter(Boolean)
+        .slice(0, maxItems);
 }
 
-// Fetch job listings
-app.post("/fetch-jobs", async (req, res) => {
-    const { skills } = req.body;
-    if (!Array.isArray(skills) || skills.length === 0) {
-        return res.status(400).json({ error: "No skills provided" });
+// Search for jobs using the profile's roles and skills, ranked by AI similarity
+app.post("/fetch-jobs", jobsLimiter, async (req, res) => {
+    const roles = cleanStringArray(req.body.roles, 5);
+    const skills = cleanStringArray(req.body.skills, 30);
+    const summary = typeof req.body.summary === "string" ? req.body.summary.slice(0, 400) : "";
+
+    if (roles.length === 0 && skills.length === 0) {
+        return res.status(400).json({ error: "Add at least one job title or skill to search for." });
     }
-    if (!ADZUNA_API_ID || !ADZUNA_API_KEY) {
+    if (!isAdzunaConfigured()) {
         return res.status(503).json({ error: "Job search is not configured on the server." });
     }
 
-    let allJobs = [];
-    for (const skill of skills) {
-        const skillJobs = await fetchJobsForSkill(skill);
-        allJobs = allJobs.concat(skillJobs);
+    try {
+        const jobs = await findMatchingJobs({ roles, skills, summary });
+        return res.json({ jobs });
+    } catch (err) {
+        console.error("Job search failed:", describeAiError(err));
+        return res.status(503).json({ error: "We couldn't search for jobs right now. Please try again in a few minutes." });
     }
-
-    allJobs = allJobs.map(job => {
-        let score = 0;
-        const matchedSkills = [];
-        skills.forEach(skill => {
-            if (job.title.toLowerCase().includes(skill.toLowerCase())) {
-                score += 5;
-                matchedSkills.push(skill);
-            }
-        });
-        return { ...job, score, matchedSkills };
-    });
-
-    allJobs.sort((a, b) => b.score - a.score);
-    res.json({ jobs: allJobs });
 });
 
-// Generate cover letter using GPT
-app.post("/generate-cover-letter", async (req, res) => {
-    const { name, email, phone, jobTitle, company, skills } = req.body;
+// Generate a cover letter for one job
+app.post("/generate-cover-letter", coverLetterLimiter, async (req, res) => {
+    const { name, email, phone, summary, jobTitle, company, jobDescription } = req.body;
+    const skills = cleanStringArray(req.body.skills, 30);
 
-    if (!name || !email || !phone || !jobTitle || !company || !Array.isArray(skills) || skills.length === 0) {
+    if (!jobTitle || skills.length === 0) {
         return res.status(400).json({ error: "Missing required user details or job information" });
     }
-    if (!OPENAI_API_KEY) {
-        return res.status(503).json({ error: "Cover letter generation is not configured on the server." });
-    }
-
-    const today = new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" });
-    const userInfo = `
-${name}
-${email}
-${phone}
-${today}`;
 
     try {
-        const response = await axios.post(
-            "https://api.openai.com/v1/chat/completions",
-            {
-                model: "gpt-4o",
-                messages: [
-                    { role: "system", content: "You are an AI that generates professional cover letters." },
-                    {
-                        role: "user",
-                        content: `Generate a personalized cover letter for a ${jobTitle} position at ${company}. The candidate has the following skills: ${skills.join(", ")}.
-
-The cover letter should include the following user details:
-${userInfo}
-
-Ensure that all placeholders like [Your Name], [Your Email], etc., are properly replaced with the user's details. Do not include placeholders for a postal address. If a detail is "Not provided", leave that line out entirely.
-`
-                    }
-                ],
-                temperature: 0.7
-            },
-            { headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }, timeout: 60000 }
-        );
-
-        res.json({ coverLetter: response.data.choices[0].message.content });
-    } catch (error) {
-        console.error("Error generating cover letter:", error.message);
+        const coverLetter = await writeCoverLetter({
+            name: typeof name === "string" ? name.slice(0, 100) : null,
+            email: typeof email === "string" ? email.slice(0, 120) : null,
+            phone: typeof phone === "string" ? phone.slice(0, 40) : null,
+            summary: typeof summary === "string" ? summary.slice(0, 400) : "",
+            jobTitle: String(jobTitle).slice(0, 200),
+            company: typeof company === "string" && company.trim() ? company.slice(0, 200) : null,
+            jobDescription: typeof jobDescription === "string" ? jobDescription : "",
+            skills,
+        });
+        res.json({ coverLetter });
+    } catch (err) {
+        console.error("Error generating cover letter:", describeAiError(err));
         res.status(502).json({ error: "Failed to generate cover letter" });
     }
 });

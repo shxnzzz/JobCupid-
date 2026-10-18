@@ -21,7 +21,7 @@ export default function JobResults({
     status,
     jobs,
     error,
-    skillCount,
+    searchedRoles,
     onRetry,
     onGenerate,
     generatingId,
@@ -61,7 +61,9 @@ export default function JobResults({
                     )}
                     {status === "loading" && (
                         <p className="text-muted">
-                            Searching live job listings for {skillCount} {skillCount === 1 ? "skill" : "skills"}. This can take up to a minute.
+                            {searchedRoles.length > 0
+                                ? `Searching live listings for ${searchedRoles.join(", ")} and ranking them against your profile…`
+                                : "Searching live listings for your skills and ranking them against your profile…"}
                         </p>
                     )}
                 </div>
@@ -102,13 +104,22 @@ export default function JobResults({
                     <details className={styles.rankingInfo}>
                         <summary>How are jobs ranked?</summary>
                         <p>
-                            For each skill on your resume, JobCupid searches live listings on Adzuna. Jobs are then
-                            ordered by how many of your skills appear in the job title. Jobs marked &quot;Related&quot;
-                            were found through a skill search but don&apos;t mention your skills in the title.
+                            We search live listings on Adzuna for each job title in your profile and remove duplicates.
+                            Each job then gets a match score out of 100:
                         </p>
+                        <ul>
+                            <li>
+                                <strong>70%</strong> comes from how closely the job&apos;s title and description match
+                                your profile in meaning, measured with AI text embeddings. This catches good fits even
+                                when the wording is different.
+                            </li>
+                            <li>
+                                <strong>30%</strong> comes from how many of your skills the listing mentions by name
+                                (5 or more gets full marks).
+                            </li>
+                        </ul>
                         <p>
-                            Writing a cover letter sends your name, email, phone number, skills and the job details to
-                            OpenAI to generate the text.
+                            Scores are an estimate to help you prioritise. Always read the full listing.
                         </p>
                     </details>
 

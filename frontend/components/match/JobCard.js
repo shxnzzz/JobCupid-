@@ -2,39 +2,91 @@ import styles from "./Match.module.css";
 
 const MAX_CHIPS = 4;
 
-export function getMatchLevel(matchCount) {
-    if (matchCount >= 3) return { label: "Strong match", tone: "strong" };
-    if (matchCount === 2) return { label: "Good match", tone: "good" };
-    if (matchCount === 1) return { label: "Partial match", tone: "partial" };
-    return { label: "Related", tone: "related" };
+export function getMatchLevel(score) {
+    if (score >= 70) return { label: "Strong match", tone: "strong" };
+    if (score >= 50) return { label: "Good match", tone: "good" };
+    if (score >= 30) return { label: "Fair match", tone: "partial" };
+    return { label: "Weak match", tone: "related" };
+}
+
+const numberFormatter = new Intl.NumberFormat("en-SG", { maximumFractionDigits: 0 });
+const formatAmount = (value) => `S$${numberFormatter.format(value)}`;
+const roundToHundred = (value) => Math.round(value / 100) * 100;
+
+function formatRange(min, max) {
+    if (min && max && min !== max) return `${formatAmount(min)} – ${formatAmount(max)}`;
+    return formatAmount(max || min);
+}
+
+function formatSalary(job) {
+    const { salaryMin, salaryMax } = job;
+    if (!salaryMin && !salaryMax) return null;
+    const yearly = formatRange(salaryMin, salaryMax);
+    const monthly = formatRange(salaryMin && roundToHundred(salaryMin / 12), salaryMax && roundToHundred(salaryMax / 12));
+    return {
+        main: `${job.salaryIsPredicted ? "Est. " : ""}${monthly} a month`,
+        detail: `${yearly} a year`,
+    };
+}
+
+function formatPosted(created) {
+    if (!created) return null;
+    const date = new Date(created);
+    if (Number.isNaN(date.getTime())) return null;
+    const days = Math.floor((Date.now() - date.getTime()) / 86400000);
+    if (days <= 0) return "Posted today";
+    if (days === 1) return "Posted yesterday";
+    if (days < 30) return `Posted ${days} days ago`;
+    return `Posted ${date.toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
 export default function JobCard({ job, rank, generating, disabled, onGenerate }) {
     const matched = job.matchedSkills || [];
-    const level = getMatchLevel(matched.length);
+    const score = typeof job.matchScore === "number" ? job.matchScore : 0;
+    const level = getMatchLevel(score);
     const extra = matched.length - MAX_CHIPS;
+    const salary = formatSalary(job);
+    const posted = formatPosted(job.created);
 
     return (
         <article className={`card card--interactive ${styles.jobCard}`} aria-labelledby={`job-${rank}-title`}>
             <div className={styles.jobTop}>
                 <span className={styles.rank} aria-label={`Rank ${rank}`}>#{rank}</span>
-                <span className={`${styles.level} ${styles[`level_${level.tone}`]}`}>{level.label}</span>
+                <span className={`${styles.level} ${styles[`level_${level.tone}`]}`}>
+                    {score}% · {level.label}
+                </span>
             </div>
 
-            <h3 id={`job-${rank}-title`} className={styles.jobTitle}>
-                {job.title}
-            </h3>
-            <p className={styles.jobMeta}>
-                <span>{job.company || "Company not listed"}</span>
-                <span aria-hidden="true"> · </span>
-                <span>{job.location || "Location not listed"}</span>
-            </p>
+            <div>
+                <h3 id={`job-${rank}-title`} className={styles.jobTitle}>
+                    {job.title}
+                </h3>
+                <p className={styles.jobMeta}>
+                    <span>{job.company || "Company not listed"}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span>{job.location || "Location not listed"}</span>
+                </p>
+            </div>
+
+            {job.snippet && <p className={styles.jobSnippet}>{job.snippet}</p>}
+
+            {(salary || posted) && (
+                <div className={styles.jobFacts}>
+                    {salary && (
+                        <p className={styles.salary}>
+                            {salary.main}
+                            <span className={styles.salaryDetail}> ({salary.detail})</span>
+                        </p>
+                    )}
+                    {posted && <p className={styles.posted}>{posted}</p>}
+                </div>
+            )}
 
             <div className={styles.jobMatch}>
                 {matched.length > 0 ? (
                     <>
                         <p className={styles.jobMatchLabel}>
-                            {matched.length === 1 ? "1 of your skills" : `${matched.length} of your skills`} in the title
+                            Mentions {matched.length === 1 ? "1 of your skills" : `${matched.length} of your skills`}
                         </p>
                         <ul className={styles.chips}>
                             {matched.slice(0, MAX_CHIPS).map((skill) => (
@@ -43,12 +95,11 @@ export default function JobCard({ job, rank, generating, disabled, onGenerate })
                             {extra > 0 && <li className={`badge ${styles.badgeMore}`}>+{extra} more</li>}
                         </ul>
                     </>
-                ) : job.foundBy ? (
-                    <p className={styles.jobMatchLabel}>
-                        Found by searching for <strong>{job.foundBy}</strong>
-                    </p>
                 ) : (
-                    <p className={styles.jobMatchLabel}>Found through a search for one of your skills</p>
+                    <p className={styles.jobMatchLabel}>Doesn&apos;t mention your listed skills by name</p>
+                )}
+                {job.foundBy && (
+                    <p className={styles.jobFoundBy}>From your search for &ldquo;{job.foundBy}&rdquo;</p>
                 )}
             </div>
 

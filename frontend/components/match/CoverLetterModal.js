@@ -64,7 +64,7 @@ export default function CoverLetterModal({ letter, onClose }) {
                         <div>
                             <h2 id="cover-letter-title" className={styles.dialogTitle}>Your cover letter</h2>
                             <p className={styles.dialogSubtitle}>
-                                {letter.jobTitle} at {letter.company}
+                                {letter.company ? `${letter.jobTitle} at ${letter.company}` : letter.jobTitle}
                             </p>
                         </div>
                         <button

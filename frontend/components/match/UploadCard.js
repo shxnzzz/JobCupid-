@@ -121,7 +121,7 @@ export default function UploadCard({ uploading, error, onUpload, onClearError })
                 {uploading ? (
                     <>
                         <span className={styles.spinner} aria-hidden="true" />
-                        Reading your resume…
+                        Analysing your resume…
                     </>
                 ) : (
                     "Find matching jobs"
@@ -129,7 +129,8 @@ export default function UploadCard({ uploading, error, onUpload, onClearError })
             </button>
 
             <p className={styles.consent}>
-                Your resume is only used to pick out your skills and is deleted from our server straight after.
+                By uploading, you agree that your resume text is sent to OpenAI to identify your skills and suitable
+                roles. We don&apos;t store your resume: the file is deleted from our server straight after.
                 See our <Link href="/privacy">Privacy Policy</Link>.
             </p>
         </form>

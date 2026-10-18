@@ -21,15 +21,24 @@ export async function uploadResume(file) {
     return response.data;
 }
 
-export async function fetchJobs(skills) {
-    const response = await client.post("/fetch-jobs", { skills }, { timeout: 180000 });
+export async function fetchJobs({ roles, skills, summary }) {
+    const response = await client.post("/fetch-jobs", { roles, skills, summary }, { timeout: 90000 });
     return response.data.jobs || [];
 }
 
-export async function generateCoverLetter({ name, email, phone, jobTitle, company, skills }) {
+export async function generateCoverLetter({ name, email, phone, summary, skills, job }) {
     const response = await client.post(
         "/generate-cover-letter",
-        { name, email, phone, jobTitle, company, skills },
+        {
+            name,
+            email,
+            phone,
+            summary,
+            skills,
+            jobTitle: job.title,
+            company: job.company,
+            jobDescription: job.description,
+        },
         { timeout: 90000 }
     );
     return response.data.coverLetter;
