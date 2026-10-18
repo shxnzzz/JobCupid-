@@ -167,7 +167,7 @@ export default function ResumeUpload() {
     }, [jobMatches]); // Scroll when jobMatches change
 
     return (
-        <div className="container">
+        <div>
             <div className="upload-box">
                 <h2>Upload Your Resume</h2>
 
