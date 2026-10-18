@@ -23,4 +23,4 @@ ADZUNA_API_KEY= your_adzuna_app_key
 
 And a `.env.local` under `Frontend` (Next.js) if you want to override API base URL:
 
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
+NEXT_PUBLIC_API_URL=http://localhost:5000

@@ -8,14 +8,18 @@ import os
 # Load SpaCy NLP model
 nlp = spacy.load("en_core_web_sm")
 
+class ResumeParseError(Exception):
+    """Raised for problems the user can fix (e.g. unreadable or image-only PDF)."""
+
+
 def extract_text_from_pdf(pdf_path):
     """Extracts text from a given PDF file."""
     try:
         with pdfplumber.open(pdf_path) as pdf:
             text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
         return text.strip()
-    except Exception as e:
-        return json.dumps({"error": f"Error reading PDF: {str(e)}"})
+    except Exception:
+        raise ResumeParseError("We couldn't open this PDF. It may be damaged or password-protected.")
 
 # Extract Email
 def extract_email(text):
@@ -119,7 +123,9 @@ def extract_skills(text):
 def parse_resume(pdf_path):
     extracted_text = extract_text_from_pdf(pdf_path)  # Extract text from PDF
     if not extracted_text:
-        return {"error": "No text extracted from resume"}
+        raise ResumeParseError(
+            "We couldn't find any text in this PDF. If it's a scanned image, please upload a text-based PDF."
+        )
     
     return {
         "name": extract_name(extracted_text),
@@ -139,5 +145,10 @@ if __name__ == "__main__":
         print(json.dumps({"error": f"File not found: {pdf_path}"}))
         sys.exit(1)
 
-    parsed_data = parse_resume(pdf_path)
+    try:
+        parsed_data = parse_resume(pdf_path)
+    except ResumeParseError as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(2)
+
     print(json.dumps(parsed_data, indent=4))

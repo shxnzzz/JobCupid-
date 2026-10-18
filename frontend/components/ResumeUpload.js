@@ -1,7 +1,26 @@
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const MAX_FILE_SIZE = 2 * 1024 * 1024;
+
+function validateFile(file) {
+    if (!file) return "Please select a resume file.";
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) return "Only PDF files are supported.";
+    if (file.size > MAX_FILE_SIZE) return "File size must be under 2MB.";
+    return null;
+}
+
+function getErrorMessage(err, fallback) {
+    if (err.response && err.response.data && err.response.data.error) {
+        return err.response.data.error;
+    }
+    if (!err.response) {
+        return "Can't reach the server. Please check your connection and try again.";
+    }
+    return fallback;
+}
 
 export default function ResumeUpload() {
     const [file, setFile] = useState(null);
@@ -21,8 +40,9 @@ export default function ResumeUpload() {
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
         if (!selectedFile) return;
-        if (selectedFile.size > 2 * 1024 * 1024) {
-            setError("File size must be under 2MB.");
+        const validationError = validateFile(selectedFile);
+        if (validationError) {
+            setError(validationError);
             return;
         }
         setFile(selectedFile);
@@ -46,8 +66,9 @@ export default function ResumeUpload() {
         event.preventDefault();
         setIsDragging(false);
         const droppedFile = event.dataTransfer.files[0];
-        if (droppedFile.size > 2 * 1024 * 1024) {
-            setError("File size must be under 2MB.");
+        const validationError = validateFile(droppedFile);
+        if (validationError) {
+            setError(validationError);
             return;
         }
         setFile(droppedFile);
@@ -72,12 +93,12 @@ export default function ResumeUpload() {
         formData.append("resume", file);
 
         try {
-            const response = await axios.post(`${API_BASE_URL}/upload`, formData);
+            const response = await axios.post(`${API_URL}/upload`, formData);
             setResumeData(response.data);
             setSuccess("Resume uploaded successfully!");
             fetchJobs(response.data.skills);
         } catch (err) {
-            setError("Upload failed. Please try again.");
+            setError(getErrorMessage(err, "Upload failed. Please try again."));
         } finally {
             setLoading(false);
         }
@@ -86,7 +107,7 @@ export default function ResumeUpload() {
     const fetchJobs = async (skills) => {
         setFetchingJobs(true);
         try {
-            const response = await axios.post(`${API_BASE_URL}/fetch-jobs`, { skills });
+            const response = await axios.post(`${API_URL}/fetch-jobs`, { skills });
             setJobMatches(response.data.jobs || []);
         } catch (error) {
             setJobMatches([]);
@@ -98,10 +119,8 @@ export default function ResumeUpload() {
         if (!resumeData) return;
         setGeneratingForJob(job.title);
         try {
-            const response = await axios.post(`${API_BASE_URL}/generate-cover-letter`, {
+            const response = await axios.post(`${API_URL}/generate-cover-letter`, {
                 name: resumeData.name || "Not Provided",
-                address: resumeData.address || "Not Provided",
-                cityStateZip: resumeData.cityStateZip || "Not Provided",
                 email: resumeData.email || "Not Provided",
                 phone: resumeData.phone || "Not Provided",
                 jobTitle: job.title,
@@ -160,7 +179,7 @@ export default function ResumeUpload() {
                 >
                     <input
                         type="file"
-                        accept=".pdf,.doc,.docx"
+                        accept=".pdf,application/pdf"
                         className="file-input"
                         id="fileUpload"
                         onChange={handleFileChange}
