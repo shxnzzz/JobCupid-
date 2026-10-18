@@ -188,6 +188,7 @@ async function fetchJobsForSkill(skill) {
             company: job.company ? job.company.display_name : "Unknown",
             location: job.location ? job.location.display_name : "Remote",
             url: job.redirect_url,
+            foundBy: skill,
         }));
     } catch (error) {
         console.error(`API Error for skill "${skill}":`, error.message);
@@ -213,12 +214,14 @@ app.post("/fetch-jobs", async (req, res) => {
 
     allJobs = allJobs.map(job => {
         let score = 0;
+        const matchedSkills = [];
         skills.forEach(skill => {
             if (job.title.toLowerCase().includes(skill.toLowerCase())) {
                 score += 5;
+                matchedSkills.push(skill);
             }
         });
-        return { ...job, score };
+        return { ...job, score, matchedSkills };
     });
 
     allJobs.sort((a, b) => b.score - a.score);
@@ -236,11 +239,12 @@ app.post("/generate-cover-letter", async (req, res) => {
         return res.status(503).json({ error: "Cover letter generation is not configured on the server." });
     }
 
+    const today = new Date().toLocaleDateString("en-SG", { day: "numeric", month: "long", year: "numeric" });
     const userInfo = `
 ${name}
 ${email}
 ${phone}
-[Date]`;
+${today}`;
 
     try {
         const response = await axios.post(
@@ -256,7 +260,7 @@ ${phone}
 The cover letter should include the following user details:
 ${userInfo}
 
-Ensure that all placeholders like [Your Name], [Your Email], etc., are properly replaced with the user's details. Do not include placeholders for a postal address.
+Ensure that all placeholders like [Your Name], [Your Email], etc., are properly replaced with the user's details. Do not include placeholders for a postal address. If a detail is "Not provided", leave that line out entirely.
 `
                     }
                 ],

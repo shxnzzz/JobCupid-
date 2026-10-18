@@ -1,4 +1,4 @@
-import ResumeUpload from "@/components/ResumeUpload";
+import MatchApp from "@/components/match/MatchApp";
 import Seo from "@/components/Seo";
 
 export default function Match() {
@@ -9,11 +9,9 @@ export default function Match() {
         description="Upload your PDF resume to see live job listings in Singapore that match your skills."
         path="/match"
       />
-      <section className="section">
-        <div className="container">
-          <ResumeUpload />
-        </div>
-      </section>
+      <div className="container">
+        <MatchApp />
+      </div>
     </>
   );
 }
