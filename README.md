@@ -4,7 +4,11 @@
 
 JobCupid is a full-stack web app that reads a PDF resume with AI, works out the candidate's skills, seniority and the job titles that suit them, searches live job listings in Singapore, and ranks every result by how well it matches the candidate's profile. It can also draft a tailored cover letter for any job in one click.
 
-It started as a hackathon project built around one idea: job seekers shouldn't spend hours scrolling through listings to find the few they're qualified for. I've since rebuilt it into a production-style app with AI resume analysis, semantic job ranking, a redesigned interface, and hardened backend.
+It started as a hackathon project built around one idea: job seekers shouldn't spend hours scrolling through listings to find the few they're qualified for. I've since rebuilt it into a production-style app with AI resume analysis, semantic job ranking, a redesigned interface, and a hardened backend. It is deployed and available to try.
+
+**Live demo:** [job-cupid-one.vercel.app](https://job-cupid-one.vercel.app)
+
+The website is hosted on [Vercel](https://vercel.com) and the API on [Render](https://render.com)'s free instance. That instance sleeps after about 15 minutes without a request, so the first upload can take about a minute while the server wakes up. Searches after that are much faster.
 
 ![JobCupid profile page showing the AI-generated summary, contact details, and editable job titles and skills](docs/screenshots/profile.png)
 
@@ -66,11 +70,29 @@ flowchart LR
 | AI | OpenAI Chat Completions with structured outputs (`gpt-4o-mini`), Embeddings (`text-embedding-3-small`), `gpt-4o` for cover letters |
 | Job data | Adzuna Jobs API |
 
+## Deployment
+
+| Part | Host | URL |
+|---|---|---|
+| Website | Vercel, built from the `frontend` directory | [job-cupid-one.vercel.app](https://job-cupid-one.vercel.app) |
+| API | Render, Docker image from the `backend` directory | [jobcupid.onrender.com](https://jobcupid.onrender.com) |
+
+A push to `main` redeploys both. Vercel runs the Next.js build. Render builds `backend/Dockerfile`, which installs the Node server and a Python environment for `pdfplumber`.
+
+The two services are connected by environment variables, not by code in the repo:
+
+- `NEXT_PUBLIC_API_URL` is baked into the website at build time and points at the Render URL. `NEXT_PUBLIC_SITE_URL` is the public site address used for canonical links.
+- OpenAI and Adzuna keys live only in Render's environment. `TRUST_PROXY=1` lets rate limits see the real client IP behind Render's proxy. `FRONTEND_ORIGIN` is set to the Vercel URL, so the browser is allowed to call the API and other websites are not.
+- `GET https://jobcupid.onrender.com/health` returns `{ "status": "ok" }`.
+
+The resume file is handled on Render and deleted after the text is extracted. Vercel only serves the pages and tells the browser where the API is.
+
 ## Project structure
 
 ```
 JobCupid/
 ├── backend/
+│   ├── Dockerfile             # Node + Python image used by Render
 │   ├── server.js              # Express API: routes, validation, rate limits, CORS
 │   ├── lib/
 │   │   ├── openai.js          # Resume → profile, embeddings, cover letters
@@ -80,7 +102,7 @@ JobCupid/
 │   │   └── requirements.txt
 │   └── .env.example
 ├── frontend/
-│   ├── pages/                 # index (home), match (the app), 404
+│   ├── pages/                 # home, match, about, privacy, terms, 404
 │   ├── components/
 │   │   ├── layout/            # Navbar, Footer, Logo, Layout
 │   │   ├── match/             # Upload, profile editor, job cards, pagination, cover letter dialog
@@ -198,11 +220,13 @@ Errors are always returned as JSON (`{ "error": "..." }`) with an appropriate st
 - **Match scores are estimates.** The semantic score thresholds were calibrated on a small set of test searches.
 - **Salary data quirk.** Adzuna's API sometimes reports salaries written as "90k" as 90 × 12 = 1,080. JobCupid detects this pattern and recovers the intended figure, and hides other implausible values, but some listings may still be off.
 - **Limited results.** Up to 20 listings per job title (about 100 before de-duplication).
+- **Free-tier cold start.** The Render API sleeps after about 15 minutes of no use. The first request then takes about a minute.
 
 ## Roadmap
 
-- [ ] Marketing landing page, About, Privacy Policy and Terms pages
-- [ ] Deploy (frontend on Vercel, backend with a Dockerfile on Render or Railway)
+- [x] About, Privacy Policy and Terms pages
+- [x] Deploy the website on Vercel and the API on Render
+- [ ] Full marketing landing page
 - [ ] Automated tests for the ranking, salary normalisation and API validation
 - [ ] OCR support for scanned resumes
 - [ ] Filters (salary, location, posted date) and saved jobs
